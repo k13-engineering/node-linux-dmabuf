@@ -1,0 +1,23 @@
+{
+  "name": "@k13engineering/linux-dmabuf",
+  "type": "module",
+  "description": "DMA buffer utilities for Node.js",
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist"
+  ],
+  "main": "dist/lib/index.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/k13-engineering/node-linux-dmabuf.git"
+  },
+  "keywords": [],
+  "author": "Simon Kadisch",
+  "license": "LGPL 2.1",
+  "bugs": {
+    "url": "https://github.com/k13-engineering/node-linux-dmabuf/issues"
+  },
+  "homepage": "https://github.com/k13-engineering/node-linux-dmabuf#readme"
+}
