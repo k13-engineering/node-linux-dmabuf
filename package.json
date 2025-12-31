@@ -14,5 +14,8 @@
     "deno-node": "^0.0.12",
     "typescript-eslint": "^8.19.0"
   },
-  "dependencies": {}
+  "dependencies": {
+    "@k13engineering/po6-ioctl": "^0.0.2",
+    "@k13engineering/po6-mmap": "^0.0.2"
+  }
 }
