@@ -8,6 +8,9 @@ import { importAndDupDmabuf } from "./dmabuf-handle.ts";
 
 type TDmabufHeap = TDmabufAllocator;
 
+const O_RDWR = BigInt(0x02);
+const O_CLOEXEC = BigInt(0x80000);
+
 const openDmabufHeapAllocatorByDuppingFd = ({
   dmabufHeapFd: providedDmabufHeapFd
 }: {
@@ -29,7 +32,7 @@ const openDmabufHeapAllocatorByDuppingFd = ({
 
     const { errno: allocateErrno, dmabufFd } = dmabufHeapIoctlAllocate({
       dmabufHeapFd,
-      fdFlags: BigInt(0),
+      fdFlags: O_RDWR | O_CLOEXEC,
       heapFlags: BigInt(0),
       size
     });

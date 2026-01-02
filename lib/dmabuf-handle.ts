@@ -3,6 +3,7 @@ import nodeFs from "node:fs";
 import { assertIsADmaBuf } from "./fd-checks.ts";
 import { dup } from "./dup.ts";
 import { dmabufIoctlSyncEnd, dmabufIoctlSyncStart } from "./dmabuf-ioctl.ts";
+import { mmapFd } from "@k13engineering/po6-mmap";
 
 type TDmabufInfo = {
   inode: number;
@@ -102,7 +103,7 @@ const importAndDupDmabuf = ({ dmabufFd: providedDmabufFd }: { dmabufFd: number }
   //   access: TMapAccess;
   // };
 
-  const map: TDmabufHandle["map"] = ({ iKnowWhatImDoing }) => {
+  const map: TDmabufHandle["map"] = ({ iKnowWhatImDoing, access }) => {
     if (!iKnowWhatImDoing) {
       let message = `mapping dmabufs is for internal or advanced usage only:`;
       message += ` dmabuf accesses need proper synchronization;`;
@@ -115,7 +116,36 @@ const importAndDupDmabuf = ({ dmabufFd: providedDmabufFd }: { dmabufFd: number }
     assertNotClosed();
     assertFdIsUnchanged();
 
-    throw Error("dmabuf mapping not yet implemented");
+    // fd: number;
+    // mappingVisibility: TMemoryMappingVisibility;
+    // memoryProtectionFlags: TMemoryProtectionFlags;
+    // genericFlags: Partial<TGenericMmapFlags>;
+    // offsetInFd: number;
+    // length: number;
+
+    const { size } = info();
+
+    const { errno, buffer } = mmapFd({
+      fd: dmabufFd,
+      mappingVisibility: "MAP_SHARED",
+      memoryProtectionFlags: {
+        PROT_READ: access.read,
+        PROT_WRITE: access.write,
+        // PROT_READ: true,
+        // PROT_WRITE: true,
+        PROT_EXEC: false
+      },
+      genericFlags: {},
+      offsetInFd: 0,
+      length: size
+    });
+
+    if (errno !== undefined) {
+      throw Error(`dmabuf mmap failed with errno ${errno}`);
+    }
+
+    const mapping = new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+    return mapping;
   };
 
   let syncStarted = false;

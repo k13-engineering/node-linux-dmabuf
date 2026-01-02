@@ -1,10 +1,13 @@
 const isADmaBuf = ({ fd }: { fd: number }): boolean => {
   // TODO: implement
-  return true;
+
+  return fd >= 0;
 };
 
 const assertFdIsValid = ({ fd }: { fd: number }): void => {
-
+  if (fd < 0) {
+    throw Error(`fd ${fd} is not valid`);
+  }
 };
 
 const assertIsADmaBuf = ({ dmabufFd }: { dmabufFd: number }): void => {
