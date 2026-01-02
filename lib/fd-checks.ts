@@ -1,7 +1,10 @@
-const assertFdIsValid = ({ fd }: { fd: number }): void => {
+const isADmaBuf = ({ fd }: { fd: number }): boolean => {
+  // TODO: implement
+  return true;
 };
 
-const isADmaBuf = ({ fd }: { fd: number }): boolean => {
+const assertFdIsValid = ({ fd }: { fd: number }): void => {
+
 };
 
 const assertIsADmaBuf = ({ dmabufFd }: { dmabufFd: number }): void => {
