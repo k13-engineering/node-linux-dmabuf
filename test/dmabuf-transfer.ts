@@ -383,17 +383,17 @@ describe("dmabuf-transfer", () => {
             backingBuffer: backingBuffer2
           });
 
-          // Note: Current implementation doesn't prevent nested transactions
-          // This test documents the current behavior
-          nodeAssert.doesNotThrow(() => {
+          nodeAssert.throws(() => {
             transaction(({ useReadOnly }) => {
               useReadOnly({ handle: handle1 });
 
-              // Nested transaction - may or may not be supported
+              // nested transaction
               transaction(({ useReadOnly: useReadOnly2 }) => {
                 useReadOnly2({ handle: handle2 });
               });
             });
+          }, (err: Error) => {
+            return err.message === "nested transactions are not allowed";
           });
         });
 

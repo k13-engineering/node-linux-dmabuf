@@ -37,8 +37,14 @@ type TUseInternal<T> = {
   mapping: TDmabufMapping;
 };
 
+let transactionEntered = false;
+
 // eslint-disable-next-line max-statements
 const transaction = <T>(fn: TTransactionFunction<T>) => {
+
+  if (transactionEntered) {
+    throw Error("nested transactions are not allowed");
+  }
 
   let readOnlyUses: TUseInternal<TBufferUseReadHandle>[] = [];
   let writeOnlyUses: TUseInternal<TBufferUseWriteHandle>[] = [];
@@ -255,12 +261,20 @@ const transaction = <T>(fn: TTransactionFunction<T>) => {
     destinationSlice.set(sourceSlice, 0);
   };
 
-  const result = fn({
-    useReadOnly,
-    useWriteOnly,
-    useReadWrite,
-    copy,
-  });
+  transactionEntered = true;
+
+  let result: T;
+
+  try {
+    result = fn({
+      useReadOnly,
+      useWriteOnly,
+      useReadWrite,
+      copy,
+    });
+  } finally {
+    transactionEntered = false;
+  }
 
   [
     ...readOnlyUses,
