@@ -1,3 +1,4 @@
+import type { TDmabufMapping } from "./dmabuf-handle-mapping.ts";
 import type { TDmabufHandle, TDmabufSync } from "./dmabuf-handle.ts";
 
 type TBufferUseReadHandle = {
@@ -33,7 +34,7 @@ type TUseInternal<T> = {
   use: T;
   handle: TDmabufHandle;
   sync: TDmabufSync;
-  mapping: Uint8Array;
+  mapping: TDmabufMapping;
 };
 
 // eslint-disable-next-line max-statements
@@ -57,46 +58,75 @@ const transaction = <T>(fn: TTransactionFunction<T>) => {
     }
   };
 
-  const createRead = ({ handle }: { handle: TDmabufHandle }): TBufferUseReadHandle["read"] => {
-    return ({ offset, length }) => {
-      const mappedBuffer = handle.map({ iKnowWhatImDoing: true, access: { read: true, write: false } });
-      const slice = mappedBuffer.subarray(offset, offset + length);
+  const readInternal = ({
+    internalHandle,
+    offset,
+    length
+  }: {
+    internalHandle: TUseInternal<TBufferUseReadHandle>,
+    offset: number,
+    length: number
+  }) => {
+    const mapping = internalHandle.mapping;
 
-      const result = new Uint8Array(length);
-      result.set(slice, 0);
+    const slice = mapping.subarray(offset, offset + length);
 
-      return result;
-    };
+    const result = new Uint8Array(length);
+    result.set(slice, 0);
+
+    return result;
   };
 
-  const createWrite = ({ handle }: { handle: TDmabufHandle }): TBufferUseWriteHandle["write"] => {
-    return ({ offset, data }) => {
-      const mappedBuffer = handle.map({ iKnowWhatImDoing: true, access: { read: false, write: true } });
-      const slice = mappedBuffer.subarray(offset, offset + data.length);
-      slice.set(data, 0);
-    };
+  const writeInternal = ({
+    internalHandle,
+    offset,
+    data
+  }: {
+    internalHandle: TUseInternal<TBufferUseWriteHandle>,
+    offset: number,
+    data: Uint8Array
+  }) => {
+    const mapping = internalHandle.mapping;
+
+    const slice = mapping.subarray(offset, offset + data.length);
+    slice.set(data, 0);
   };
 
   const useReadOnly: TTransactionFunctionArgs["useReadOnly"] = ({ handle }) => {
     assertHandleNotAlreadyUsed({ handle });
 
-    const read = createRead({ handle });
+    const read: TBufferUseReadHandle["read"] = ({ offset, length }) => {
+      return readInternal({
+        // eslint-disable-next-line no-use-before-define
+        internalHandle,
+        offset,
+        length
+      });
+    };
 
     const useHandle: TBufferUseReadHandle = {
       read
     };
 
     const sync = handle.sync({ iKnowWhatImDoing: true, read: true, write: false });
-    const mapping = handle.map({ iKnowWhatImDoing: true, access: { read: true, write: false } });
+    const mapping = handle.map({
+      iKnowWhatImDoing: true,
+      access: {
+        read: "required",
+        write: "optional"
+      }
+    });
+
+    const internalHandle: TUseInternal<TBufferUseReadHandle> = {
+      use: useHandle,
+      handle,
+      sync,
+      mapping
+    };
 
     readOnlyUses = [
       ...readOnlyUses,
-      {
-        use: useHandle,
-        handle,
-        sync,
-        mapping
-      }
+      internalHandle
     ];
 
     return useHandle;
@@ -105,23 +135,38 @@ const transaction = <T>(fn: TTransactionFunction<T>) => {
   const useWriteOnly: TTransactionFunctionArgs["useWriteOnly"] = ({ handle }) => {
     assertHandleNotAlreadyUsed({ handle });
 
-    const write = createWrite({ handle });
+    const write: TBufferUseWriteHandle["write"] = ({ offset, data }) => {
+      return writeInternal({
+        // eslint-disable-next-line no-use-before-define
+        internalHandle,
+        offset,
+        data
+      });
+    };
 
     const useHandle: TBufferUseWriteHandle = {
       write
     };
 
     const sync = handle.sync({ iKnowWhatImDoing: true, read: false, write: true });
-    const mapping = handle.map({ iKnowWhatImDoing: true, access: { read: false, write: true } });
+    const mapping = handle.map({
+      iKnowWhatImDoing: true,
+      access: {
+        read: "optional",
+        write: "required"
+      }
+    });
+
+    const internalHandle: TUseInternal<TBufferUseWriteHandle> = {
+      use: useHandle,
+      handle,
+      sync,
+      mapping
+    };
 
     writeOnlyUses = [
       ...writeOnlyUses,
-      {
-        use: useHandle,
-        handle,
-        sync,
-        mapping
-      }
+      internalHandle
     ];
 
     return useHandle;
@@ -130,8 +175,22 @@ const transaction = <T>(fn: TTransactionFunction<T>) => {
   const useReadWrite: TTransactionFunctionArgs["useReadWrite"] = ({ handle }) => {
     assertHandleNotAlreadyUsed({ handle });
 
-    const read = createRead({ handle });
-    const write = createWrite({ handle });
+    const read: TBufferUseReadWriteHandle["read"] = ({ offset, length }) => {
+      return readInternal({
+        // eslint-disable-next-line no-use-before-define
+        internalHandle,
+        offset,
+        length
+      });
+    };
+    const write: TBufferUseReadWriteHandle["write"] = ({ offset, data }) => {
+      return writeInternal({
+        // eslint-disable-next-line no-use-before-define
+        internalHandle,
+        offset,
+        data
+      });
+    };
 
     const useHandle: TBufferUseReadWriteHandle = {
       read,
@@ -139,23 +198,31 @@ const transaction = <T>(fn: TTransactionFunction<T>) => {
     };
 
     const sync = handle.sync({ iKnowWhatImDoing: true, read: true, write: true });
-    const mapping = handle.map({ iKnowWhatImDoing: true, access: { read: true, write: true } });
+    const mapping = handle.map({
+      iKnowWhatImDoing: true,
+      access: {
+        read: "required",
+        write: "required"
+      }
+    });
+
+    const internalHandle: TUseInternal<TBufferUseReadWriteHandle> = {
+      use: useHandle,
+      handle,
+      sync,
+      mapping
+    };
 
     readWriteUses = [
       ...readWriteUses,
-      {
-        use: useHandle,
-        handle,
-        sync,
-        mapping
-      }
+      internalHandle
     ];
 
     return useHandle;
   };
 
   const internalHandleFromReadUse = ({ readUse }: { readUse: TBufferUseReadHandle }): TUseInternal<TBufferUseReadHandle> => {
-    const internalUse = [ ...readOnlyUses, ...readWriteUses ].find((elem) => {
+    const internalUse = [...readOnlyUses, ...readWriteUses].find((elem) => {
       return elem.use === readUse;
     });
 
@@ -167,7 +234,7 @@ const transaction = <T>(fn: TTransactionFunction<T>) => {
   };
 
   const internalHandleFromWriteUse = ({ writeUse }: { writeUse: TBufferUseWriteHandle }): TUseInternal<TBufferUseWriteHandle> => {
-    const internalUse = [ ...writeOnlyUses, ...readWriteUses ].find((elem) => {
+    const internalUse = [...writeOnlyUses, ...readWriteUses].find((elem) => {
       return elem.use === writeUse;
     });
 
@@ -199,8 +266,9 @@ const transaction = <T>(fn: TTransactionFunction<T>) => {
     ...readOnlyUses,
     ...writeOnlyUses,
     ...readWriteUses
-  ].forEach(({ sync }) => {
+  ].forEach(({ sync, mapping }) => {
     sync.end();
+    mapping.release();
   });
 
   return result;

@@ -4,15 +4,13 @@ import { assertIsADmaBuf } from "./fd-checks.ts";
 import { dup } from "./dup.ts";
 import { dmabufIoctlSyncEnd, dmabufIoctlSyncStart } from "./dmabuf-ioctl.ts";
 import { mmapFd } from "@k13engineering/po6-mmap";
+import { type TMemoryProtectionFlags } from "@k13engineering/po6-mmap/dist/lib/convenience-api.js";
+import { createMappingHelper, type TDmabufMapping, type TDmabufMappingAccess } from "./dmabuf-handle-mapping.ts";
+import { createDefaultGarbageCollectedWithoutReleaseError, createGarbageCollectionGuard } from "./snippets/gc-guard.ts";
 
 type TDmabufInfo = {
   inode: number;
   size: number;
-};
-
-type TMapAccess = {
-  read: boolean;
-  write: boolean;
 };
 
 type TDmabufSync = {
@@ -30,14 +28,34 @@ type TSyncReadOrWrite = {
   write: true;
 };
 
+type TDmabufHandleInfo = {
+  handleId: number;
+  inode: number;
+  size: number;
+};
+
 type TDmabufHandle = {
   exportAndDupAsDmabufFd: () => { dmabufFd: number };
   info: () => TDmabufInfo;
-  map: (args: { iKnowWhatImDoing: boolean, access: TMapAccess }) => Uint8Array;
+  map: (args: { iKnowWhatImDoing: boolean, access: TDmabufMappingAccess }) => TDmabufMapping;
   sync: (args: { iKnowWhatImDoing: boolean } & TSyncReadOrWrite) => TDmabufSync;
   close: () => void;
 };
 
+const dmabufGarbageCollectionGuard = createGarbageCollectionGuard({
+  createError: ({ info }: { info: TDmabufHandleInfo }) => {
+    return createDefaultGarbageCollectedWithoutReleaseError({
+      name: "DmabufMappingGarbageCollectedWithoutReleaseError",
+      info: `dma buffer handle with handleId=${info.handleId} inode=${info.inode} size=${info.size}`,
+      releaseFunctionName: "release",
+      resourcesName: "dma buffer handles",
+    });
+  }
+});
+
+let handleIdCounter = 0;
+
+// eslint-disable-next-line max-statements
 const importAndDupDmabuf = ({ dmabufFd: providedDmabufFd }: { dmabufFd: number }): TDmabufHandle => {
 
   assertIsADmaBuf({ dmabufFd: providedDmabufFd });
@@ -103,6 +121,29 @@ const importAndDupDmabuf = ({ dmabufFd: providedDmabufFd }: { dmabufFd: number }
   //   access: TMapAccess;
   // };
 
+  const mapAsserted = ({ memoryProtectionFlags }: { memoryProtectionFlags: TMemoryProtectionFlags }) => {
+    const { size } = info();
+
+    const { errno, buffer } = mmapFd({
+      fd: dmabufFd,
+      mappingVisibility: "MAP_SHARED",
+      memoryProtectionFlags,
+      genericFlags: {},
+      offsetInFd: 0,
+      length: size
+    });
+
+    if (errno !== undefined) {
+      throw Error(`dmabuf mmap failed with errno ${errno}`);
+    }
+
+    return buffer;
+  };
+
+  const mappingHelper = createMappingHelper({
+    mapAsserted
+  });
+
   const map: TDmabufHandle["map"] = ({ iKnowWhatImDoing, access }) => {
     if (!iKnowWhatImDoing) {
       let message = `mapping dmabufs is for internal or advanced usage only:`;
@@ -116,35 +157,8 @@ const importAndDupDmabuf = ({ dmabufFd: providedDmabufFd }: { dmabufFd: number }
     assertNotClosed();
     assertFdIsUnchanged();
 
-    // fd: number;
-    // mappingVisibility: TMemoryMappingVisibility;
-    // memoryProtectionFlags: TMemoryProtectionFlags;
-    // genericFlags: Partial<TGenericMmapFlags>;
-    // offsetInFd: number;
-    // length: number;
+    const mapping = mappingHelper.map({ access });
 
-    const { size } = info();
-
-    const { errno, buffer } = mmapFd({
-      fd: dmabufFd,
-      mappingVisibility: "MAP_SHARED",
-      memoryProtectionFlags: {
-        PROT_READ: access.read,
-        PROT_WRITE: access.write,
-        // PROT_READ: true,
-        // PROT_WRITE: true,
-        PROT_EXEC: false
-      },
-      genericFlags: {},
-      offsetInFd: 0,
-      length: size
-    });
-
-    if (errno !== undefined) {
-      throw Error(`dmabuf mmap failed with errno ${errno}`);
-    }
-
-    const mapping = new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
     return mapping;
   };
 
@@ -180,6 +194,7 @@ const importAndDupDmabuf = ({ dmabufFd: providedDmabufFd }: { dmabufFd: number }
       }
 
       dmabufIoctlSyncEnd({ dmabufFd, read: true, write: true });
+      syncStarted = false;
       stale = true;
     };
 
@@ -200,18 +215,32 @@ const importAndDupDmabuf = ({ dmabufFd: providedDmabufFd }: { dmabufFd: number }
     closed = true;
   };
 
+  const handleId = handleIdCounter;
+  handleIdCounter += 1;
+
+  const { release: protectedClose } = dmabufGarbageCollectionGuard.protect({
+    release: () => {
+      close();
+    },
+
+    info: {
+      handleId,
+      inode,
+      size: info().size
+    }
+  });
+
   return {
     exportAndDupAsDmabufFd,
     info,
     map,
     sync,
-    close
+    close: protectedClose
   };
 };
 
 export type {
   TDmabufHandle,
-  TMapAccess,
   TSyncReadOrWrite,
   TDmabufSync
 };

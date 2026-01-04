@@ -20,7 +20,7 @@ const allocateAsserted = ({ bufferSize }: { bufferSize: number }) => {
   return bufferHandle;
 };
 
-const buffer1Handle = allocateAsserted({ bufferSize: 100 });
+let buffer1Handle = allocateAsserted({ bufferSize: 100 });
 const buffer2Handle = allocateAsserted({ bufferSize: 200 });
 
 console.log({
@@ -55,3 +55,10 @@ transaction(({ useReadOnly, useWriteOnly, useReadWrite, copy }) => {
   const readbackAfterCopy = b2.read({ offset: 5, length: 20 });
   console.log({ readbackAfterCopy });
 });
+
+buffer1Handle.close();
+buffer1Handle = undefined;
+
+setInterval(() => {
+  gc!();
+}, 100);
