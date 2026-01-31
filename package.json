@@ -18,7 +18,7 @@
   },
   "dependencies": {
     "@k13engineering/po6-ioctl": "^0.0.2",
-    "@k13engineering/po6-mmap": "^0.0.6",
+    "@k13engineering/po6-mmap": "^0.0.7",
     "syscall-napi": "^0.1.5"
   }
 }
