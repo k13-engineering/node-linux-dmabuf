@@ -1,4 +1,4 @@
-import type { TMemoryMappedBuffer } from "@k13engineering/po6-mmap";
+import type { TMemoryMapping } from "@k13engineering/po6-mmap";
 import { type TMemoryProtectionFlags } from "@k13engineering/po6-mmap/dist/lib/convenience-api.js";
 import { createDefaultGarbageCollectedWithoutReleaseError, createGarbageCollectionGuard } from "./snippets/gc-guard.ts";
 import { createCachedMapper } from "./cached-mapper.ts";
@@ -10,8 +10,13 @@ type TDmabufMappingAccess = {
   write: TDmabufMappingPolicy;
 };
 
-type TDmabufMapping = Uint8Array & {
+type TDmabufMapping = {
   mappingId: number;
+
+  address: bigint;
+  length: number;
+
+  createArrayBuffer: TMemoryMapping["createArrayBuffer"];
   release: () => void;
 };
 
@@ -22,7 +27,7 @@ type TDmabufMappingInfo = {
 const createMappingHelper = ({
   mapAsserted
 }: {
-  mapAsserted: (args: { memoryProtectionFlags: TMemoryProtectionFlags }) => TMemoryMappedBuffer;
+  mapAsserted: (args: { memoryProtectionFlags: TMemoryProtectionFlags }) => TMemoryMapping;
 }) => {
 
   const readOnlyCachedMapper = createCachedMapper({
@@ -74,7 +79,7 @@ const createMappingHelper = ({
 
   let mappingIdCounter = 0;
 
-  // eslint-disable-next-line max-statements,complexity
+  // eslint-disable-next-line complexity
   const map = ({ access }: { access: TDmabufMappingAccess }): TDmabufMapping => {
 
     const mappingId = mappingIdCounter;
@@ -109,13 +114,13 @@ const createMappingHelper = ({
       info: mappingInfo
     });
 
-    const bufferView = new Uint8Array(mappedBuffer.buffer, mappedBuffer.byteOffset, mappedBuffer.byteLength);
-    const mapping = bufferView as TDmabufMapping;
-
-    mapping.mappingId = mappingId;
-    mapping.release = release;
-
-    return mapping;
+    return {
+      mappingId,
+      address: mappedBuffer.address,
+      length: mappedBuffer.length,
+      createArrayBuffer: mappedBuffer.createArrayBuffer,
+      release,
+    };
   };
 
   const close = () => {

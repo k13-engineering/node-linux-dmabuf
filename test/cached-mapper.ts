@@ -1,17 +1,31 @@
 import assert from "node:assert";
 import { createCachedMapper } from "../lib/cached-mapper.ts";
-import type { TMemoryMappedBuffer } from "@k13engineering/po6-mmap";
-
+import type { TMemoryMapping } from "@k13engineering/po6-mmap";
+const createMockMapping = ({
+  length,
+  byteOffset = 0,
+  onUnmap = () => { },
+  arrayBuffer,
+}: {
+  length: number;
+  byteOffset?: number;
+  onUnmap?: () => void;
+  arrayBuffer?: ArrayBuffer;
+}): TMemoryMapping => {
+  const buffer = arrayBuffer ?? new ArrayBuffer(byteOffset + length);
+  return {
+    address: 0n,
+    length,
+    createArrayBuffer: () => buffer,
+    unmap: onUnmap,
+  };
+};
 describe("cached-mapper", () => {
   describe("createCachedMapper", () => {
     it("should create a cached mapper with expected methods", () => {
       const mapper = createCachedMapper({
         map: () => {
-          const virtualMappedBuffer = new Uint8Array(32) as TMemoryMappedBuffer;
-          virtualMappedBuffer.unmap = () => {
-
-          };
-          return virtualMappedBuffer;
+          return createMockMapping({ length: 32 });
         },
       });
 
@@ -29,20 +43,15 @@ describe("cached-mapper", () => {
       const mapper = createCachedMapper({
         map: () => {
           mapCallCount += 1;
-
-          const virtualMappedBuffer = new Uint8Array(length) as TMemoryMappedBuffer;
-          virtualMappedBuffer.unmap = () => {
-
-          };
-          return virtualMappedBuffer;
+          return createMockMapping({ length });
         },
       });
 
       const result = mapper.maybeMap();
       assert.strictEqual(mapCallCount, 1);
-      assert.ok(result instanceof Uint8Array);
       assert.strictEqual(result.length, length);
       assert.strictEqual(typeof result.release, "function");
+      assert.strictEqual(typeof result.createArrayBuffer, "function");
 
       result.release();
     });
@@ -52,12 +61,7 @@ describe("cached-mapper", () => {
       const mapper = createCachedMapper({
         map: () => {
           mapCallCount += 1;
-
-          const virtualMappedBuffer = new Uint8Array(32) as TMemoryMappedBuffer;
-          virtualMappedBuffer.unmap = () => {
-
-          };
-          return virtualMappedBuffer;
+          return createMockMapping({ length: 32 });
         },
       });
 
@@ -75,11 +79,12 @@ describe("cached-mapper", () => {
       let unmapCallCount = 0;
       const mapper = createCachedMapper({
         map: () => {
-          const virtualMappedBuffer = new Uint8Array(32) as TMemoryMappedBuffer;
-          virtualMappedBuffer.unmap = () => {
-            unmapCallCount += 1;
-          };
-          return virtualMappedBuffer;
+          return createMockMapping({
+            length: 32,
+            onUnmap: () => {
+              unmapCallCount += 1;
+            },
+          });
         },
       });
 
@@ -102,13 +107,7 @@ describe("cached-mapper", () => {
     it("should create independent Uint8Array views for each call", () => {
       const mapper = createCachedMapper({
         map: () => {
-
-          const virtualMappedBuffer = new Uint8Array(32) as TMemoryMappedBuffer;
-          virtualMappedBuffer.unmap = () => {
-
-          };
-
-          return virtualMappedBuffer;
+          return createMockMapping({ length: 32 });
         },
       });
 
@@ -118,12 +117,16 @@ describe("cached-mapper", () => {
       // Should be separate objects
       assert.notStrictEqual(result1, result2);
 
-      // But should share the same underlying buffer
-      assert.strictEqual(result1.buffer, result2.buffer);
+      // But should share the same underlying buffer via createArrayBuffer
+      const buffer1 = result1.createArrayBuffer();
+      const buffer2 = result2.createArrayBuffer();
+      assert.strictEqual(buffer1, buffer2);
 
       // Modifications through one view should be visible through the other
-      result1[0] = 255;
-      assert.strictEqual(result2[0], 255);
+      const view1 = new Uint8Array(buffer1);
+      const view2 = new Uint8Array(buffer2);
+      view1[0] = 255;
+      assert.strictEqual(view2[0], 255);
 
       result1.release();
       result2.release();
@@ -136,12 +139,12 @@ describe("cached-mapper", () => {
       const mapper = createCachedMapper({
         map: () => {
           mapCallCount += 1;
-
-          const virtualMappedBuffer = new Uint8Array(32) as TMemoryMappedBuffer;
-          virtualMappedBuffer.unmap = () => {
-            unmapCallCount += 1;
-          };
-          return virtualMappedBuffer;
+          return createMockMapping({
+            length: 32,
+            onUnmap: () => {
+              unmapCallCount += 1;
+            },
+          });
         },
       });
 
@@ -165,11 +168,7 @@ describe("cached-mapper", () => {
     it("should throw error when release is called twice on same reference", () => {
       const mapper = createCachedMapper({
         map: () => {
-          const virtualMappedBuffer = new Uint8Array(100) as TMemoryMappedBuffer;
-          virtualMappedBuffer.unmap = () => {
-
-          };
-          return virtualMappedBuffer;
+          return createMockMapping({ length: 100 });
         },
       });
 
@@ -184,11 +183,7 @@ describe("cached-mapper", () => {
     it("should allow other references to be released after one is double-released", () => {
       const mapper = createCachedMapper({
         map: () => {
-          const virtualMappedBuffer = new Uint8Array(100) as TMemoryMappedBuffer;
-          virtualMappedBuffer.unmap = () => {
-
-          };
-          return virtualMappedBuffer;
+          return createMockMapping({ length: 100 });
         },
       });
 
@@ -211,11 +206,12 @@ describe("cached-mapper", () => {
       let unmapCallCount = 0;
       const mapper = createCachedMapper({
         map: () => {
-          const virtualMappedBuffer = new Uint8Array(100) as TMemoryMappedBuffer;
-          virtualMappedBuffer.unmap = () => {
-            unmapCallCount += 1;
-          };
-          return virtualMappedBuffer;
+          return createMockMapping({
+            length: 100,
+            onUnmap: () => {
+              unmapCallCount += 1;
+            },
+          });
         },
       });
 
@@ -234,11 +230,7 @@ describe("cached-mapper", () => {
     it("should verify refcount integrity by checking BUG messages", () => {
       const mapper = createCachedMapper({
         map: () => {
-          const virtualMappedBuffer = new Uint8Array(100) as TMemoryMappedBuffer;
-          virtualMappedBuffer.unmap = () => {
-
-          };
-          return virtualMappedBuffer;
+          return createMockMapping({ length: 100 });
         },
       });
 
@@ -257,11 +249,7 @@ describe("cached-mapper", () => {
     it("should return false initially", () => {
       const mapper = createCachedMapper({
         map: () => {
-          const virtualMappedBuffer = new Uint8Array(100) as TMemoryMappedBuffer;
-          virtualMappedBuffer.unmap = () => {
-
-          };
-          return virtualMappedBuffer;
+          return createMockMapping({ length: 100 });
         },
       });
 
@@ -271,11 +259,7 @@ describe("cached-mapper", () => {
     it("should return true after mapping", () => {
       const mapper = createCachedMapper({
         map: () => {
-          const virtualMappedBuffer = new Uint8Array(100) as TMemoryMappedBuffer;
-          virtualMappedBuffer.unmap = () => {
-
-          };
-          return virtualMappedBuffer;
+          return createMockMapping({ length: 100 });
         },
       });
 
@@ -288,11 +272,7 @@ describe("cached-mapper", () => {
     it("should return true while references exist", () => {
       const mapper = createCachedMapper({
         map: () => {
-          const virtualMappedBuffer = new Uint8Array(100) as TMemoryMappedBuffer;
-          virtualMappedBuffer.unmap = () => {
-
-          };
-          return virtualMappedBuffer;
+          return createMockMapping({ length: 100 });
         },
       });
 
@@ -311,11 +291,7 @@ describe("cached-mapper", () => {
     it("should return false after all references are released", () => {
       const mapper = createCachedMapper({
         map: () => {
-          const virtualMappedBuffer = new Uint8Array(100) as TMemoryMappedBuffer;
-          virtualMappedBuffer.unmap = () => {
-
-          };
-          return virtualMappedBuffer;
+          return createMockMapping({ length: 100 });
         },
       });
 
@@ -328,11 +304,7 @@ describe("cached-mapper", () => {
     it("should alternate between true and false across mapping cycles", () => {
       const mapper = createCachedMapper({
         map: () => {
-          const virtualMappedBuffer = new Uint8Array(100) as TMemoryMappedBuffer;
-          virtualMappedBuffer.unmap = () => {
-
-          };
-          return virtualMappedBuffer;
+          return createMockMapping({ length: 100 });
         },
       });
 
@@ -354,11 +326,7 @@ describe("cached-mapper", () => {
     it("should exist as a method", () => {
       const mapper = createCachedMapper({
         map: () => {
-          const virtualMappedBuffer = new Uint8Array(100) as TMemoryMappedBuffer;
-          virtualMappedBuffer.unmap = () => {
-
-          };
-          return virtualMappedBuffer;
+          return createMockMapping({ length: 100 });
         },
       });
 
@@ -368,11 +336,7 @@ describe("cached-mapper", () => {
     it("should not throw when called", () => {
       const mapper = createCachedMapper({
         map: () => {
-          const virtualMappedBuffer = new Uint8Array(100) as TMemoryMappedBuffer;
-          virtualMappedBuffer.unmap = () => {
-
-          };
-          return virtualMappedBuffer;
+          return createMockMapping({ length: 100 });
         },
       });
 
@@ -384,11 +348,7 @@ describe("cached-mapper", () => {
     it("should be callable even with active mappings", () => {
       const mapper = createCachedMapper({
         map: () => {
-          const virtualMappedBuffer = new Uint8Array(100) as TMemoryMappedBuffer;
-          virtualMappedBuffer.unmap = () => {
-
-          };
-          return virtualMappedBuffer;
+          return createMockMapping({ length: 100 });
         },
       });
 
@@ -404,11 +364,7 @@ describe("cached-mapper", () => {
     it("should be callable multiple times", () => {
       const mapper = createCachedMapper({
         map: () => {
-          const virtualMappedBuffer = new Uint8Array(100) as TMemoryMappedBuffer;
-          virtualMappedBuffer.unmap = () => {
-
-          };
-          return virtualMappedBuffer;
+          return createMockMapping({ length: 100 });
         },
       });
 
@@ -424,11 +380,7 @@ describe("cached-mapper", () => {
     it("should handle zero-length buffers", () => {
       const mapper = createCachedMapper({
         map: () => {
-          const virtualMappedBuffer = new Uint8Array(0) as TMemoryMappedBuffer;
-          virtualMappedBuffer.unmap = () => {
-
-          };
-          return virtualMappedBuffer;
+          return createMockMapping({ length: 0 });
         },
       });
 
@@ -443,17 +395,18 @@ describe("cached-mapper", () => {
       const mapper = createCachedMapper({
         map: () => {
           const buffer = new ArrayBuffer(1000);
-          const virtualMappedBuffer = new Uint8Array(buffer, 900, 100) as TMemoryMappedBuffer;
-          virtualMappedBuffer.unmap = () => {
-
-          };
-          return virtualMappedBuffer;
+          return createMockMapping({
+            length: 100,
+            byteOffset: 900,
+            arrayBuffer: buffer,
+          });
         },
       });
 
       const result = mapper.maybeMap();
-      assert.strictEqual(result.byteOffset, 900);
       assert.strictEqual(result.length, 100);
+      const buffer = result.createArrayBuffer();
+      assert.strictEqual(buffer.byteLength, 1000);
       result.release();
     });
 
@@ -475,11 +428,7 @@ describe("cached-mapper", () => {
         map: () => {
           callCount += 1;
           if (callCount === 1) {
-            const virtualMappedBuffer = new Uint8Array(100) as TMemoryMappedBuffer;
-            virtualMappedBuffer.unmap = () => {
-
-            };
-            return virtualMappedBuffer;
+            return createMockMapping({ length: 100 });
           }
           throw new Error("second mapping failed");
         },
@@ -497,11 +446,12 @@ describe("cached-mapper", () => {
     it("should handle unmap throwing an error", () => {
       const mapper = createCachedMapper({
         map: () => {
-          const virtualMappedBuffer = new Uint8Array(100) as TMemoryMappedBuffer;
-          virtualMappedBuffer.unmap = () => {
-            throw new Error("unmap failed");
-          };
-          return virtualMappedBuffer;
+          return createMockMapping({
+            length: 100,
+            onUnmap: () => {
+              throw new Error("unmap failed");
+            },
+          });
         },
       });
 
@@ -519,11 +469,7 @@ describe("cached-mapper", () => {
     it("should verify that each reference has its own released flag", () => {
       const mapper = createCachedMapper({
         map: () => {
-          const virtualMappedBuffer = new Uint8Array(100) as TMemoryMappedBuffer;
-          virtualMappedBuffer.unmap = () => {
-
-          };
-          return virtualMappedBuffer;
+          return createMockMapping({ length: 100 });
         },
       });
 
@@ -547,11 +493,12 @@ describe("cached-mapper", () => {
       let unmapCallCount = 0;
       const mapper = createCachedMapper({
         map: () => {
-          const virtualMappedBuffer = new Uint8Array(100) as TMemoryMappedBuffer;
-          virtualMappedBuffer.unmap = () => {
-            unmapCallCount += 1;
-          };
-          return virtualMappedBuffer;
+          return createMockMapping({
+            length: 100,
+            onUnmap: () => {
+              unmapCallCount += 1;
+            },
+          });
         },
       });
 
@@ -579,11 +526,7 @@ describe("cached-mapper", () => {
     it("should verify release method is not shared between references", () => {
       const mapper = createCachedMapper({
         map: () => {
-          const virtualMappedBuffer = new Uint8Array(100) as TMemoryMappedBuffer;
-          virtualMappedBuffer.unmap = () => {
-
-          };
-          return virtualMappedBuffer;
+          return createMockMapping({ length: 100 });
         },
       });
 
@@ -600,25 +543,24 @@ describe("cached-mapper", () => {
     it("should handle buffer modifications through different references", () => {
       const mapper = createCachedMapper({
         map: () => {
-          const virtualMappedBuffer = new Uint8Array(100) as TMemoryMappedBuffer;
-          virtualMappedBuffer.unmap = () => {
-
-          };
-          return virtualMappedBuffer;
+          return createMockMapping({ length: 100 });
         },
       });
 
       const result1 = mapper.maybeMap();
       const result2 = mapper.maybeMap();
 
-      result1[0] = 42;
-      result1[1] = 43;
+      const view1 = new Uint8Array(result1.createArrayBuffer());
+      const view2 = new Uint8Array(result2.createArrayBuffer());
 
-      assert.strictEqual(result2[0], 42);
-      assert.strictEqual(result2[1], 43);
+      view1[0] = 42;
+      view1[1] = 43;
 
-      result2[2] = 44;
-      assert.strictEqual(result1[2], 44);
+      assert.strictEqual(view2[0], 42);
+      assert.strictEqual(view2[1], 43);
+
+      view2[2] = 44;
+      assert.strictEqual(view1[2], 44);
 
       result1.release();
       result2.release();
@@ -629,23 +571,22 @@ describe("cached-mapper", () => {
     it("should support typical usage pattern: map, use, release", () => {
       const mapper = createCachedMapper({
         map: () => {
-          const virtualMappedBuffer = new Uint8Array(100) as TMemoryMappedBuffer;
+          const buffer = new ArrayBuffer(100);
+          const view = new Uint8Array(buffer);
           for (let i = 0; i < 100; i += 1) {
-            virtualMappedBuffer[i] = i;
+            view[i] = i;
           }
-          virtualMappedBuffer.unmap = () => {
-
-          };
-          return virtualMappedBuffer;
+          return createMockMapping({ length: 100, arrayBuffer: buffer });
         },
       });
 
       const mapped = mapper.maybeMap();
 
       // Use the buffer
+      const view = new Uint8Array(mapped.createArrayBuffer());
       let sum = 0;
       for (let i = 0; i < mapped.length; i += 1) {
-        sum += mapped[i];
+        sum += view[i];
       }
 
       // sum of 0..99
@@ -659,11 +600,12 @@ describe("cached-mapper", () => {
       let unmapCount = 0;
       const mapper = createCachedMapper({
         map: () => {
-          const virtualMappedBuffer = new Uint8Array(100) as TMemoryMappedBuffer;
-          virtualMappedBuffer.unmap = () => {
-            unmapCount += 1;
-          };
-          return virtualMappedBuffer;
+          return createMockMapping({
+            length: 100,
+            onUnmap: () => {
+              unmapCount += 1;
+            },
+          });
         },
       });
 
@@ -675,7 +617,8 @@ describe("cached-mapper", () => {
 
       // Use all references
       for (const ref of refs) {
-        ref[0] = 255;
+        const view = new Uint8Array(ref.createArrayBuffer());
+        view[0] = 255;
       }
 
       // Release all
@@ -692,21 +635,21 @@ describe("cached-mapper", () => {
       const mapper = createCachedMapper({
         map: () => {
           mapCount += 1;
-          const virtualMappedBuffer = new Uint8Array(100) as TMemoryMappedBuffer;
-          virtualMappedBuffer[0] = mapCount;
-          virtualMappedBuffer.unmap = () => {
-
-          };
-          return virtualMappedBuffer;
+          const buffer = new ArrayBuffer(100);
+          const view = new Uint8Array(buffer);
+          view[0] = mapCount;
+          return createMockMapping({ length: 100, arrayBuffer: buffer });
         },
       });
 
       const ref1 = mapper.maybeMap();
-      assert.strictEqual(ref1[0], 1);
+      const view1 = new Uint8Array(ref1.createArrayBuffer());
+      assert.strictEqual(view1[0], 1);
       ref1.release();
 
       const ref2 = mapper.maybeMap();
-      assert.strictEqual(ref2[0], 2);
+      const view2 = new Uint8Array(ref2.createArrayBuffer());
+      assert.strictEqual(view2[0], 2);
       ref2.release();
 
       assert.strictEqual(mapCount, 2);

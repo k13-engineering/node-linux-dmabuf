@@ -16,6 +16,8 @@ type TDmabufHandleMock = {
   info: () => TDmabufMockInfo;
 };
 
+let mockMappingIdCounter = 0;
+
 const createDmabufHandleMock = ({
   inode,
   backingBuffer
@@ -75,15 +77,25 @@ const createDmabufHandleMock = ({
       args
     });
 
-    const buffer = new Uint8Array(backingBuffer.buffer, backingBuffer.byteOffset, backingBuffer.byteLength) as TDmabufMapping;
-    buffer.release = () => {
-      addCall({
-        method: "[map].release",
-        args: []
-      });
+    const mappingId = mockMappingIdCounter;
+    mockMappingIdCounter += 1;
+
+    const mapping: TDmabufMapping = {
+      mappingId,
+      address: 0n,
+      length: backingBuffer.length,
+      createArrayBuffer: () => {
+        return backingBuffer.buffer as ArrayBuffer;
+      },
+      release: () => {
+        addCall({
+          method: "[map].release",
+          args: []
+        });
+      }
     };
 
-    return buffer;
+    return mapping;
   };
 
   const close: TDmabufHandle["close"] = (...args) => {

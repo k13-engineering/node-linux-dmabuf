@@ -147,7 +147,7 @@ const createHandleImporter = ({
     const mapAsserted = ({ memoryProtectionFlags }: { memoryProtectionFlags: TMemoryProtectionFlags }) => {
       const { size } = info();
 
-      const { errno, buffer } = linuxInterface.mmapFd({
+      const { errno, mapping } = linuxInterface.mmapFd({
         fd: dmabufFd,
         mappingVisibility: "MAP_SHARED",
         memoryProtectionFlags,
@@ -160,7 +160,7 @@ const createHandleImporter = ({
         throw Error(`dmabuf mmap failed with errno ${errno}`);
       }
 
-      return buffer;
+      return mapping;
     };
 
     const mappingHelper = createMappingHelper({

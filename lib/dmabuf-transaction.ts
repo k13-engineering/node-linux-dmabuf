@@ -85,7 +85,9 @@ const dmabufTransaction = <T>(fn: TTransactionFunction<T>) => {
       internalHandle
     ];
 
-    const buffer = new Uint8Array(mapping.buffer, mapping.byteOffset, mapping.byteLength);
+    const backingArrayBuffer = mapping.createArrayBuffer();
+
+    const buffer = new Uint8Array(backingArrayBuffer, 0, backingArrayBuffer.byteLength);
     return buffer;
   };
 

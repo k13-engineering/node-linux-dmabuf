@@ -1,21 +1,24 @@
-import type { TMemoryMappedBuffer } from "@k13engineering/po6-mmap";
+import type { TMemoryMapping } from "@k13engineering/po6-mmap";
 
-type TRefcountedBufferMapping = Uint8Array & {
+type TRefcountedBufferMapping = {
+  address: bigint;
+  length: number;
+  createArrayBuffer: () => ArrayBuffer;
   release: () => void;
 };
 
 const createCachedMapper = ({
   map,
 }: {
-  map: () => TMemoryMappedBuffer;
+  map: () => TMemoryMapping;
 }) => {
 
   let refcount = 0;
-  let mappedBuffer: TMemoryMappedBuffer | undefined = undefined;
+  let backingBufferMapping: TMemoryMapping | undefined = undefined;
 
   const maybeMap = (): TRefcountedBufferMapping => {
-    if (mappedBuffer === undefined) {
-      mappedBuffer = map();
+    if (backingBufferMapping === undefined) {
+      backingBufferMapping = map();
     }
 
     refcount += 1;
@@ -31,31 +34,30 @@ const createCachedMapper = ({
         throw Error("BUG: release called when refcount is <= 0");
       }
 
-      if (mappedBuffer === undefined) {
+      if (backingBufferMapping === undefined) {
         throw Error("BUG: release called but mappedBuffer is undefined");
       }
 
       refcount -= 1;
 
       if (refcount === 0) {
-        mappedBuffer.unmap();
-        mappedBuffer = undefined;
+        backingBufferMapping.unmap();
+        backingBufferMapping = undefined;
       }
 
       released = true;
     };
 
-    const bufferView = new Uint8Array(mappedBuffer.buffer, mappedBuffer.byteOffset, mappedBuffer.byteLength);
-    const cachedMappedBuffer = bufferView as TRefcountedBufferMapping;
-
-    // monkey-patch mappingId and release method
-    cachedMappedBuffer.release = release;
-
-    return cachedMappedBuffer;
+    return {
+      address: backingBufferMapping.address,
+      length: backingBufferMapping.length,
+      createArrayBuffer: backingBufferMapping.createArrayBuffer,
+      release,
+    };
   };
 
   const mapped = () => {
-    return mappedBuffer !== undefined;
+    return backingBufferMapping !== undefined;
   };
 
   const close = () => {
