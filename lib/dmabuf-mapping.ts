@@ -2,6 +2,7 @@ import type { TMemoryMapping } from "@k13engineering/po6-mmap";
 import { type TMemoryProtectionFlags } from "@k13engineering/po6-mmap/dist/lib/convenience-api.js";
 import { createDefaultGarbageCollectedWithoutReleaseError, createGarbageCollectionGuard } from "./snippets/gc-guard.ts";
 import { createCachedMapper } from "./cached-mapper.ts";
+import { createStackTrace } from "./snippets/stack-trace.ts";
 
 type TDmabufMappingPolicy = "forbidden" | "required" | "optional";
 
@@ -22,6 +23,7 @@ type TDmabufMapping = {
 
 type TDmabufMappingInfo = {
   mappingId: number;
+  allocationStackTrace: string;
 };
 
 const createMappingHelper = ({
@@ -73,6 +75,7 @@ const createMappingHelper = ({
         name: "DmabufMappingGarbageCollectedWithoutReleaseError",
         releaseFunctionName: "release",
         resourcesName: "dma buffer mappings",
+        allocationStackTrace: info.allocationStackTrace
       });
     },
   });
@@ -103,7 +106,8 @@ const createMappingHelper = ({
     const mappedBuffer = mapperToUse.maybeMap();
 
     const mappingInfo: TDmabufMappingInfo = {
-      mappingId
+      mappingId,
+      allocationStackTrace: createStackTrace({ up: 1 })
     };
 
     const { release } = dmabufMappingGarbageCollectionGuard.protect({

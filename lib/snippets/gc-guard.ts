@@ -39,11 +39,13 @@ const createDefaultGarbageCollectedWithoutReleaseError = ({
   info,
   releaseFunctionName,
   resourcesName,
+  allocationStackTrace
 }: {
   name: string,
   info: string,
   releaseFunctionName: string,
   resourcesName: string,
+  allocationStackTrace: string
 }) => {
 
   let message = `${info} was garbage collected without calling release().`;
@@ -52,6 +54,10 @@ const createDefaultGarbageCollectedWithoutReleaseError = ({
   message += ` Please make sure to call ${releaseFunctionName}() on all ${resourcesName} when you are done with them.`;
   message += ` Underlying resources should have still be cleaned up in case you are catching uncaught exceptions -`;
   message += ` however, do not rely on this behavior (specifically for production code).`;
+  message += ` Allocation stack trace:`;
+  allocationStackTrace.split("\n").forEach((line) => {
+    message += `\n  ${line}`;
+  });
 
   const error = Error(message);
   error.name = name;

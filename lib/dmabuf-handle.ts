@@ -3,6 +3,7 @@ import { type TMemoryProtectionFlags } from "@k13engineering/po6-mmap";
 import { createMappingHelper, type TDmabufMapping, type TDmabufMappingAccess } from "./dmabuf-mapping.ts";
 import { createDefaultGarbageCollectedWithoutReleaseError, createGarbageCollectionGuard } from "./snippets/gc-guard.ts";
 import type { TLinuxDmabufInterface } from "./linux-interface.ts";
+import { createStackTrace } from "./snippets/stack-trace.ts";
 
 type TDmabufInfo = {
   inode: number;
@@ -28,6 +29,7 @@ type TDmabufHandleInfo = {
   handleId: number;
   inode: number;
   size: number;
+  allocationStackTrace: string;
 };
 
 type TDmabufHandle = {
@@ -45,6 +47,7 @@ const dmabufGarbageCollectionGuard = createGarbageCollectionGuard({
       info: `dma buffer handle with handleId=${info.handleId} inode=${info.inode} size=${info.size}`,
       releaseFunctionName: "release",
       resourcesName: "dma buffer handles",
+      allocationStackTrace: info.allocationStackTrace
     });
   }
 });
@@ -241,6 +244,8 @@ const createHandleImporter = ({
     const handleId = handleIdCounter;
     handleIdCounter += 1;
 
+    const allocationStackTrace = createStackTrace({ up: 1 });
+
     const { release: protectedClose } = dmabufGarbageCollectionGuard.protect({
       release: () => {
         close();
@@ -249,7 +254,8 @@ const createHandleImporter = ({
       info: {
         handleId,
         inode,
-        size: info().size
+        size: info().size,
+        allocationStackTrace
       }
     });
 
