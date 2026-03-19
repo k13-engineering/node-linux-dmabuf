@@ -2,6 +2,8 @@ type TInstance = {
   release: () => void;
 };
 
+let finalizationRegistries: FinalizationRegistry<unknown>[] = [];
+
 const createGarbageCollectionGuard = <T>({
   createError,
 }: {
@@ -13,6 +15,11 @@ const createGarbageCollectionGuard = <T>({
     throw createError({ info });
   });
 
+  finalizationRegistries = [
+    ...finalizationRegistries,
+    instanceFinalizationRegistry
+  ];
+
   const protect = ({
     release: providedRelease,
     info
@@ -20,6 +27,10 @@ const createGarbageCollectionGuard = <T>({
     const release = () => {
       providedRelease();
       instanceFinalizationRegistry.unregister(release);
+
+      finalizationRegistries = finalizationRegistries.filter((registry) => {
+        return registry !== instanceFinalizationRegistry;
+      });
     };
 
     instanceFinalizationRegistry.register(release, info, release);
